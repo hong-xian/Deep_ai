@@ -125,7 +125,7 @@ def rnn_cell_forward(x_t, a_prev, parameters):
     a_next = np.tanh(np.matmul(w_aa, a_prev) + np.matmul(w_ax, x_t) + b_a)
     yt_pred = softmax(np.matmul(w_ya, a_next) + b_y)
 
-    cache = (a_next, a_prev, parameters)
+    cache = (a_next, a_prev, x_t, parameters)
     # store values needed for back propagation
     return a_next, yt_pred, cache
 
@@ -204,3 +204,131 @@ def rnn_forward(x, a_0, parameters):
 # print("y_pred.shape = ", y_pred.shape)
 # print("caches[1][1][3] =", caches[1][1][3])
 # print("len(caches) = ", len(caches))
+
+def rnn_cell_backward(da_next, cache):
+    """
+    implement backward pass for a RNN cell (single time step)
+    :param da_next: gradient of loss with respect to a_next
+    :param cache: python dictionary contains all values of (out of rnn_forward)
+    :return:
+    gradients -- python dictionary containing:
+                    dx -- gradient of input data, of shape (n_x, m)
+                    da_prev -- gradient of previous hidden state, shape of (n_a, m)
+                    dw_ax -- gradients of input to hidden weight matrix, shape of (n_x, n_a)
+                    dw_aa -- gradients of hidden to hidden weight matrix, shape of (n_a, n_a)
+                    db_a --gradients of bias, shape of (n_a, 1)
+    """
+
+    a_next, a_prev, x_t, parameters = cache
+    w_ax = parameters["w_ax"]
+    w_aa = parameters["w_aa"]
+    w_ya = parameters["w_ya"]
+    b_a = parameters["b_a"]
+    b_y = parameters["b_y"]
+
+    dtanh = (1 - np.square(a_next)) * da_next
+    dx_t = np.matmul(w_ax.T, dtanh)
+    dw_ax = np.matmul(dtanh, x_t.T)
+
+    da_prev = np.matmul(w_aa.T, dtanh)
+    dw_aa = np.matmul(dtanh, a_prev.T)
+    # b_a involving a batch
+    db_a = np.sum(dtanh, keepdims=True, axis=-1)
+
+    gradients = {"dx_t": dx_t, "dw_ax": dw_ax, "da_prev": da_prev, "dw_aa": dw_aa, "db_a": db_a}
+
+    return gradients
+
+
+# np.random.seed(1)
+# x_t = np.random.randn(3, 10)
+# a_prev = np.random.randn(5, 10)
+# w_ax = np.random.randn(5, 3)
+# w_aa = np.random.randn(5, 5)
+# w_ya = np.random.randn(2, 5)
+# b_a = np.random.randn(5, 1)
+# b_y = np.random.randn(2, 1)
+# parameters = {"w_ax": w_ax, "w_aa": w_aa, "w_ya": w_ya, "b_a": b_a, "b_y": b_y}
+#
+# a_next, y_t, cache = rnn_cell_forward(x_t, a_prev, parameters)
+#
+# da_next = np.random.randn(5, 10)
+# gradients = rnn_cell_backward(da_next, cache)
+# print("gradients[\"dx_t\"][1][2] =", gradients["dx_t"][1][2])
+# print("gradients[\"dx_t\"].shape =", gradients["dx_t"].shape)
+# print("gradients[\"da_prev\"][2][3] =", gradients["da_prev"][2][3])
+# print("gradients[\"da_prev\"].shape =", gradients["da_prev"].shape)
+# print("gradients[\"dw_ax\"][3][1] =", gradients["dw_ax"][3][1])
+# print("gradients[\"dw_ax\"].shape =", gradients["dw_ax"].shape)
+# print("gradients[\"dw_aa\"][1][2] =", gradients["dw_aa"][1][2])
+# print("gradients[\"dw_aa\"].shape =", gradients["dw_aa"].shape)
+# print("gradients[\"db_a\"][4] =", gradients["db_a"][4])
+# print("gradients[\"db_a\"].shape =", gradients["db_a"].shape)
+
+def rnn_backward(da, caches):
+    """
+    implement the backward pass for RNN over an entire sequence of input data
+    :param da: Upstream gradients of all hidden states, of shape (n_a, m, len_x)
+    :param caches: tuple containing information from the forward pass (rnn_forward)
+    :return:
+        gradients -- python dictionary containing:
+                        dx -- Gradient w.r.t. the input data, numpy-array of shape (n_x, m, len_x)
+                        da_0 -- Gradient w.r.t the initial hidden state, numpy-array of shape (n_a, m)
+                        dw_ax -- Gradient w.r.t the input's weight matrix, numpy-array of shape (n_a, n_x)
+                        dw_aa -- Gradient w.r.t the hidden state's weight matrix, numpy-array of shape (n_a, n_a)
+                        db_a -- Gradient w.r.t the bias, of shape (n_a, 1)
+    """
+    caches, x = caches
+    a_1, a_0, x_1, parameters = caches[0]
+
+    # retrieve dim
+    n_a, m, len_x = da.shape
+    n_x, m = x_1.shape
+
+    # initialize gradients
+    dx = np.zeros([n_x, m, len_x])
+    dw_ax = np.zeros([n_a, n_x])
+    dw_aa = np.zeros([n_a, n_a])
+    db_a = np.zeros([n_a, 1])
+    da_prev_t = np.zeros([n_a, m])
+
+    for t in reversed(range(len_x)):
+        gradients = rnn_cell_backward(da[:, :, t] + da_prev_t, caches[t])
+        dx_t, dw_ax_t, da_prev_t, dw_aa_t, db_a_t = (gradients["dx_t"], gradients["dw_ax"],
+                                                     gradients["da_prev"], gradients["dw_aa"], gradients["db_a"])
+        dx[:, :, t] = dx_t
+        dw_aa += dw_aa_t
+        dw_ax += dw_ax_t
+        db_a += db_a_t
+    da_0 = da_prev_t
+    gradients = {"dx": dx, "dw_ax": dw_ax, "da_0": da_0, "dw_aa": dw_aa, "db_a": db_a}
+    return gradients
+
+
+# np.random.seed(1)
+# x = np.random.randn(3, 10, 4)
+# a_0 = np.random.randn(5, 10)
+# w_ax = np.random.randn(5, 3)
+# w_aa = np.random.randn(5, 5)
+# w_ya = np.random.randn(2, 5)
+# b_a = np.random.randn(5, 1)
+# b_y = np.random.randn(2, 1)
+# parameters = {"w_ax": w_ax, "w_aa": w_aa, "w_ya": w_ya, "b_a": b_a, "b_y": b_y}
+# a, y, caches = rnn_forward(x, a_0, parameters)
+# da = np.random.randn(5, 10, 4)
+# gradients = rnn_backward(da, caches)
+#
+# print("gradients[\"dx\"][1][2] =", gradients["dx"][1][2])
+# print("gradients[\"dx\"].shape =", gradients["dx"].shape)
+# print("gradients[\"da_0\"][2][3] =", gradients["da_0"][2][3])
+# print("gradients[\"da_0\"].shape =", gradients["da_0"].shape)
+# print("gradients[\"dw_ax\"][3][1] =", gradients["dw_ax"][3][1])
+# print("gradients[\"dw_ax\"].shape =", gradients["dw_ax"].shape)
+# print("gradients[\"dw_aa\"][1][2] =", gradients["dw_aa"][1][2])
+# print("gradients[\"dw_aa\"].shape =", gradients["dw_aa"].shape)
+# print("gradients[\"db_a\"][4] =", gradients["db_a"][4])
+# print("gradients[\"db_a\"].shape =", gradients["db_a"].shape)
+
+
+
+
