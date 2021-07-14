@@ -38,7 +38,7 @@ train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
 test_loader = torch.utils.data.DataLoader(dataset=test_dataset,
                                           batch_size=batch_size,
                                           shuffle=True)
-net = Rnn(28, 10, 2, 20)
+net = Rnn(28, 10, 2, 10)
 criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(net.parameters(), lr=0.01)
 
